@@ -1,67 +1,87 @@
 import gradio as gr
 from TTS.api import TTS
 import tempfile
+import os
 
-# Load the TTS model once when the app starts.
-# Using the YourTTS multilingual model which supports voice cloning.
+# Load the TTS model when the app starts.
+# Using the multilingual YourTTS model that supports voice cloning.
 MODEL_NAME = "tts_models/multilingual/multi-dataset/your_tts"
-tts = TTS(model_name=MODEL_NAME, progress_bar=False, gpu=False)  # Set gpu=True if GPU is available
+tts = TTS(model_name=MODEL_NAME, progress_bar=False, gpu=False)  # Set gpu=True if available
 
-def synthesize_speech(text: str, speaker_file):
+def synthesize_speech(text: str, language: str, speaker_file):
     """
     Synthesizes speech from the provided text.
-    If a speaker reference file is provided, it uses that for voice cloning.
-    
+    Uses your recorded voice (my_voice.wav) as the default speaker reference if none is uploaded.
+
     Args:
         text (str): The input text to synthesize.
-        speaker_file (file-like): Optional WAV file for the reference speaker.
-    
+        language (str): The language code (e.g., "hi" for Hindi, "en" for English).
+        speaker_file (str): File path to the uploaded speaker reference WAV file (optional).
+
     Returns:
         str: Path to the generated audio file (WAV format).
     """
-    # Determine if a speaker reference was provided.
-    speaker_path = speaker_file.name if speaker_file is not None else None
+    # If the user did not upload a speaker file, use the default recorded voice.
+    if speaker_file is None:
+        default_speaker = "my_voice.wav"
+        if os.path.exists(default_speaker):
+            speaker_path = default_speaker
+        else:
+            speaker_path = None
+    else:
+        speaker_path = speaker_file
 
-    # Create a temporary file to store the output audio.
+    # Create a temporary file for the output audio.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
         output_path = tmp_file.name
 
-    # Generate the speech and save to the temporary file.
     try:
-        tts.tts_to_file(text=text, speaker_wav=speaker_path, file_path=output_path)
+        # Pass the language parameter to the TTS synthesis call.
+        tts.tts_to_file(
+            text=text,
+            language=language,
+            speaker_wav=speaker_path,
+            file_path=output_path
+        )
     except Exception as e:
-        return f"Error during synthesis: {str(e)}"
+        # Raise a Gradio error so that the error is displayed properly.
+        raise gr.Error(f"Error during synthesis: {str(e)}")
     
     return output_path
 
-# Define the Gradio interface.
-# Two inputs: a textbox for text and an optional audio upload for the speaker reference.
-# One output: an audio player that plays the generated speech.
+# Define the Gradio interface with three inputs:
+# 1. A textbox for the text.
+# 2. A dropdown for selecting the language.
+# 3. An optional audio upload for a speaker reference.
 iface = gr.Interface(
     fn=synthesize_speech,
     inputs=[
-        gr.components.Textbox(
+        gr.Textbox(
             lines=5,
             placeholder="Enter your text (Hinglish: Hindi + English)...",
             label="Input Text"
         ),
-        gr.components.Audio(
-            source="upload",
-            type="file",
-            label="Speaker Reference (Optional)"
+        gr.Dropdown(
+            choices=["hi", "en"],
+            value="hi",
+            label="Language (e.g., hi for Hindi, en for English)"
+        ),
+        gr.Audio(
+            type="filepath",
+            label="Upload Speaker Reference (Optional)\n(Leave empty to use your recorded voice)"
         )
     ],
-    outputs=gr.components.Audio(
-        type="file",
+    outputs=gr.Audio(
+        type="filepath",
         label="Generated Speech"
     ),
     title="YourTTS Voice Cloning TTS",
     description=(
-        "Enter the text you want to synthesize. Optionally, upload a short WAV file of a reference "
-        "speaker to clone their voice. The app uses Coqui TTS's multilingual YourTTS model."
+        "Enter the text you want to synthesize and select the language. "
+        "If you don't upload a speaker reference, the app will use your recorded voice "
+        "(my_voice.wav) for voice cloning. The app uses Coqui TTS's multilingual YourTTS model."
     )
 )
 
-# Launch the Gradio interface.
 if __name__ == "__main__":
     iface.launch()
